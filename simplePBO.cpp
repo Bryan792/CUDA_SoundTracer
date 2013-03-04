@@ -21,7 +21,9 @@ unsigned int image_height = WINDOW_HEIGHT;
  
 extern "C" void launch_kernel(void* pos, unsigned int, unsigned int, float);
 extern "C" void setup_scene(); 
-
+extern "C" void wasdMove(unsigned char key);
+extern "C" void ijklMove(int x, int y);
+extern "C" void misc(unsigned char key);
 // variables
 GLuint pbo=0;
 GLuint textureID=0;

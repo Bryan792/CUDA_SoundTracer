@@ -10,6 +10,10 @@ int animFlag=1;
 float animTime=0.0f;
 float animInc=0.1f;
 
+// variables for mouse control
+//int lastx = -1;
+//int lasty = -1;
+
 //external variables
 extern GLuint pbo;
 extern GLuint textureID;
@@ -23,7 +27,8 @@ extern void moveLeft();
 extern void moveRight();
 
 extern "C" void wasdMove(unsigned char key);
-extern "C" void ijklMove(unsigned char key);
+
+extern "C" void ijklMove(int x, int y);
 extern "C" void misc(unsigned char key);
 // The user must create the following routines:
 void runCuda();
@@ -82,11 +87,11 @@ void keyboard(unsigned char key, int x, int y)
    case('d'):
      wasdMove(key);
      break;
-   case('i'):
+   /*case('i'):
    case('k'):
    case('j'):
    case('l'):
-     ijklMove(key);
+     ijklMove(key);*/
      break;
    case('q'):
    case('r'):
@@ -101,15 +106,19 @@ void keyboard(unsigned char key, int x, int y)
      misc(key);
      break;
    }
-   // indicate the display must be redrawn
+   ijklMove(1, 2);
+// indicate the display must be redrawn
    glutPostRedisplay();
 }
-
-// No mouse event handlers defined
 void mouse(int button, int state, int x, int y)
 {
-}
 
+
+}
 void motion(int x, int y)
 {
+
+   ijklMove(x, y);
+//   printf("Well at least I can do something\n");
+
 }

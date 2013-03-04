@@ -13,6 +13,10 @@ extern void initCuda();
 extern void runCuda();
 extern void renderCuda(int);
 
+extern "C" void wasdMove(unsigned char key);
+extern "C" void ijklMove(int x, int y);
+extern "C" void misc(unsigned char key);
+
 // callbacks
 extern void display();
 extern void keyboard(unsigned char key, int x, int y);

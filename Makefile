@@ -17,7 +17,7 @@ callbacksPBO.o:	callbacksPBO.cpp
 kernelPBO.o:	kernelPBO.cu
 	$(CC) $(CUDAFLAGS) -o $@ $<
 
-cudaRayTrace.o:	cudaRayTrace.cu
+cudaRayTrace.o:	cudaRayTrace.cu cudaRayTrace.h
 	$(CC) $(CUDAFLAGS) -o $@ $< 
 
 
