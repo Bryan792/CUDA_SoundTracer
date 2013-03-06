@@ -79,11 +79,11 @@ extern "C" void setup_scene()
   FMOD_Sound_Set3DMinMaxDistance(sound1, 4.0f, 10000.0f);
   FMOD_Sound_SetMode(sound1, FMOD_LOOP_NORMAL);
 
-  FMOD_VECTOR pos = { -10.0f, -0.0f, 0.0f };
+//  FMOD_VECTOR pos = { -10.0f, -0.0f, 0.0f };
   FMOD_VECTOR vel = {   0.0f,  0.0f, 0.0f };
 
   FMOD_System_PlaySound(asystem, FMOD_CHANNEL_FREE, sound1, TRUE, &channel1);
-  FMOD_Channel_Set3DAttributes(channel1, &pos, &vel);
+  FMOD_Channel_Set3DAttributes(channel1, (FMOD_VECTOR *) &(spheres->center), &vel);
   FMOD_Channel_SetPaused(channel1, FALSE);
 
   HANDLE_ERROR( cudaMalloc((void**)&cam_d, sizeof(Camera)) );
