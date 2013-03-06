@@ -1,4 +1,6 @@
 *.tga
 gpu
 cpu
+RTRT
 *.out
+*.o

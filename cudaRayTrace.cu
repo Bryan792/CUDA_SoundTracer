@@ -28,7 +28,7 @@ float theta, stheta;
 
 int lastx, lasty;
 
-FMOD_SYSTEM     *system;
+FMOD_SYSTEM     *asystem;
 FMOD_SOUND      *sound1, *sound2, *sound3;
 FMOD_CHANNEL    *channel1 = 0, *channel2 = 0, *channel3 = 0;
 FMOD_RESULT      result;
@@ -72,17 +72,17 @@ extern "C" void setup_scene()
   spheres = CreateSpheres();
   planes = CreatePlanes(); 
 
-  FMOD_System_Create(&system);
-  FMOD_System_GetVersion(system, &version);
-  FMOD_System_Init(system, 10, FMOD_INIT_NORMAL, NULL);
-  FMOD_System_CreateSound(system, "fmod/media/drumloop.wav", FMOD_SOFTWARE | FMOD_3D, 0, &sound1);
+  FMOD_System_Create(&asystem);
+//  FMOD_System_GetVersion(system, &version);
+  FMOD_System_Init(asystem, 10, FMOD_INIT_NORMAL, NULL);
+  FMOD_System_CreateSound(asystem, "fmod/media/drumloop.wav", FMOD_SOFTWARE | FMOD_3D, 0, &sound1);
   FMOD_Sound_Set3DMinMaxDistance(sound1, 4.0f, 10000.0f);
   FMOD_Sound_SetMode(sound1, FMOD_LOOP_NORMAL);
 
   FMOD_VECTOR pos = { -10.0f, -0.0f, 0.0f };
   FMOD_VECTOR vel = {   0.0f,  0.0f, 0.0f };
 
-  FMOD_System_PlaySound(system, FMOD_CHANNEL_FREE, sound1, TRUE, &channel1);
+  FMOD_System_PlaySound(asystem, FMOD_CHANNEL_FREE, sound1, TRUE, &channel1);
   FMOD_Channel_Set3DAttributes(channel1, &pos, &vel);
   FMOD_Channel_SetPaused(channel1, FALSE);
 
@@ -304,12 +304,9 @@ extern "C" void launch_kernel(uchar4* pos, unsigned int image_width,
   HANDLE_ERROR( cudaMemcpy(l_d, light, sizeof(PointLight), cudaMemcpyHostToDevice) );
 
   HANDLE_ERROR( cudaMemcpy(cam_d, camera,sizeof(Camera), cudaMemcpyHostToDevice) );
-  FMOD_VECTOR forward, up;
-  &listenerpos = &(camera->eye);
-  &forward = &(camera->lookAt);
-  &up = &(camera->lookUp);
-  FMOD_System_Set3DListenerAttributes(system, 0, &listenerpos, &vel, &forward, &up);
-  FMOD_System_Update(system);
+  FMOD_VECTOR vel = {0.0f, 0.0f, 0.0f};
+  FMOD_System_Set3DListenerAttributes(asystem, 0, (FMOD_VECTOR *) &(camera->eye), &vel,(FMOD_VECTOR *) &(camera->lookAt),(FMOD_VECTOR *) &(camera->lookUp));
+  FMOD_System_Update(asystem);
   
   HANDLE_ERROR( cudaMemcpy(s_d, spheres,sizeof(Sphere)*NUM_SPHERES, cudaMemcpyHostToDevice) );
 
@@ -442,6 +439,7 @@ Plane* CreatePlanes() {
 
   return planes;
 }
+/*
   template<bool LEFTEAR>
 __global__ void computeAudio(Point * o_vec3, float * o_distance,  Camera * cam,Plane * planes, Sphere * spheres)
 {
@@ -457,7 +455,7 @@ __global__ void computeAudio(Point * o_vec3, float * o_distance,  Camera * cam,P
   o_distance[index] = findDistance(myRay, cam, planes, spheres);
   o_vec3[index] = myRay.direction;
 }
-__device__ float findDistance(Ray myRay, Camera * cam, Plane * planes, Sphere * spheres)
+__device__ float findDistance(Ray myRay, Camera * cam, Plane * f, Sphere * s)
 {
   float total_distance = 0;
   Ray currentRay = myRay;
@@ -495,7 +493,7 @@ __device__ float findDistance(Ray myRay, Camera * cam, Plane * planes, Sphere * 
 
   }
 }
-
+*/
 
 /*
  * CUDA global function which performs ray tracing. Responsible for initializing and writing to output vector

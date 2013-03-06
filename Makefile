@@ -9,7 +9,7 @@ ALL= callbacksPBO.o cudaRayTrace.o simpleGLmain.o simplePBO.o
 all= $(ALL) RTRT
 
 RT:	$(ALL)
-	$(CC) $(LDFLAGS) $(ALL) -o RTRT
+	$(CC) $(LDFLAGS) $(ALL) -o RTRT fmod/lib/libfmodex64.so 
 
 callbacksPBO.o:	callbacksPBO.cpp
 	$(CC) $(CFLAGS) -o $@ $<
@@ -18,8 +18,7 @@ kernelPBO.o:	kernelPBO.cu
 	$(CC) $(CUDAFLAGS) -o $@ $<
 
 cudaRayTrace.o:	cudaRayTrace.cu cudaRayTrace.h
-	$(CC) $(CUDAFLAGS) -o $@ $< fmod/lib/libfmodex64.so 
-
+	$(CC) $(CUDAFLAGS) -o $@ $< 
 
 simpleGLmain.o:	simpleGLmain.cpp
 	$(CC) $(CFLAGS) -o $@ $<
