@@ -19,6 +19,9 @@ Camera * camera, *cam_d;
 PointLight *light, *l_d;
 Plane * planes, *p_d;
 Sphere * spheres, *s_d;
+float * output_dist_d;
+Point * output_vec_d;
+Point * final_vec_d;
 float theta, stheta;
 
 int lastx, lasty;
@@ -60,11 +63,14 @@ extern "C" void setup_scene()
   light = LightInit();
   spheres = CreateSpheres();
   planes = CreatePlanes(); 
-
+  
   HANDLE_ERROR( cudaMalloc((void**)&cam_d, sizeof(Camera)) );
   HANDLE_ERROR( cudaMalloc(&p_d, sizeof(Plane)*NUM_PLANES) );
   HANDLE_ERROR( cudaMalloc(&l_d, sizeof(PointLight)) );
-  HANDLE_ERROR( cudaMalloc(&s_d,  sizeof(Sphere)*NUM_SPHERES));
+  HANDLE_ERROR( cudaMalloc(&s_d,  sizeof(Sphere)*NUM_SPHERES) );
+  HANDLE_ERROR( cudaMalloc(&output_dist_d, sizeof(float) * WINDOW_WIDTH * WINDOW_HEIGHT) );
+  HANDLE_ERROR( cudaMalloc(&output_vec_d, sizeof(Point) * WINDOW_WIDTH * WINDOW_HEIGHT) );
+  HANDLE_ERROR( cudaMalloc(&final_vec_d, sizeof(Point)));
 
   HANDLE_ERROR( cudaMemcpy(l_d, light, sizeof(PointLight), cudaMemcpyHostToDevice) );
 
@@ -265,6 +271,22 @@ extern "C" void misc(unsigned char key)
       }
   }
 }
+extern "C" void launch_audio_kernel(Point * left, Point * right)
+{
+  //dim3 gridSize((WINDOW_WIDTH+15)/16, (WINDOW_HEIGHT+15)/16);
+  //dim3 blockSize(16,16);
+  dim3 gridSize(1,1);
+  dim3 blockSize(1,2);
+  //computeAudio<<<gridSize, blockSize>>>(1, output_vec_d, output_dist_d, cam_d, p_d, s_d);  
+  computeAudio<<<gridSize, blockSize>>>(1, output_vec_d, output_dist_d, cam_d, p_d, s_d);  
+  //reduceVect<<<GRID, BLOCK>>>(output_dist_d, output_vec_d, final_vec_d);
+  //cudaMemcpy(left, final_vec_d, sizeof(Point), cudaMemcpyHostToDevice);
+  //computeAudio<<<1000, 1024>>>(1, output_vec_d, output_dist_d, cam_d, p_d, s_d);  
+  //computeAudio<<<gridSize, blockSize>>>(1, output_vec_d, output_dist_d, cam_d, p_d, s_d);  
+  //reduceVect<<<GRID, BLOCK>>>(output_dist_d, output_vec_d, final_vec_d);
+  //cudaMemcpy(left, final_vec_d, sizeof(Point), cudaMemcpyHostToDevice);
+
+}
 extern "C" void launch_kernel(uchar4* pos, unsigned int image_width, 
     unsigned int image_height, float time)
 {
@@ -423,8 +445,6 @@ __global__ void computeAudio(int ear_dir, Point * o_vec3, float * o_distance,  C
   float rvaly = tanVal - (2 * tanVal / WINDOW_HEIGHT) * row;
   float rvalx = -1 * WINDOW_WIDTH / WINDOW_HEIGHT * tanVal + (2 * tanVal / WINDOW_HEIGHT) * col;
   rvalx*=ear_dir;
-  //float rvaly = //Find better way to do this
-  //float rvalx = 
   
   myRay.origin = cam->eye;
   myRay.direction = cam->lookAt;
@@ -436,6 +456,7 @@ __global__ void computeAudio(int ear_dir, Point * o_vec3, float * o_distance,  C
 
   o_distance[index] = findDistance(myRay, cam, planes, spheres);
   o_vec3[index] = myRay.direction;
+  //float * distance = o_distance[index];
 }
 __device__ float findDistance(Ray myRay, Camera * cam, Plane * planes, Sphere * spheres)
 {
@@ -443,7 +464,8 @@ __device__ float findDistance(Ray myRay, Camera * cam, Plane * planes, Sphere * 
   Ray currentRay = myRay;
   int i, closestSphere, closestPlane;
   float smallest, t;
-  for(int j = 0; j < 5; i++)//Loop for 5 reflections
+  
+  for(int j = 0; j < 3; i++)//Loop for 5 reflections
   {
     i = 0;
     closestSphere = -1; 

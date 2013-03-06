@@ -1,5 +1,6 @@
 // simplePBO.cpp (Rob Farber)
 #include "cudaRayTrace.h"
+#include "types.h"
 // includes
 #include <GL/glut.h>
 #include <stdio.h>
@@ -9,7 +10,8 @@
 #include <cuda.h>
 #include <cuda_runtime_api.h>
 #include <cuda_gl_interop.h>
- 
+
+
 // external variables
 extern float animTime;
 extern unsigned int window_width;
@@ -19,6 +21,7 @@ extern unsigned int window_height;
 unsigned int image_width = WINDOW_WIDTH;
 unsigned int image_height = WINDOW_HEIGHT;
  
+extern "C" void launch_audio_kernel(Point * left, Point * right);
 extern "C" void launch_kernel(void* pos, unsigned int, unsigned int, float);
 extern "C" void setup_scene(); 
 extern "C" void wasdMove(unsigned char key);
@@ -111,7 +114,9 @@ void runCuda()
  
   // execute the kernel
   launch_kernel(dptr, image_width, image_height, animTime);
- 
+  // launch audio kernel
+  Point left, right;
+  launch_audio_kernel(&left, &right);
   // unmap buffer object
   cudaGLUnmapBufferObject(pbo);
 }
