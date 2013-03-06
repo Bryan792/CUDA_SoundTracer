@@ -18,7 +18,7 @@ kernelPBO.o:	kernelPBO.cu
 	$(CC) $(CUDAFLAGS) -o $@ $<
 
 cudaRayTrace.o:	cudaRayTrace.cu cudaRayTrace.h
-	$(CC) $(CUDAFLAGS) -o $@ $< 
+	$(CC) $(CUDAFLAGS) -o $@ $< fmod/lib/libfmodex64.so 
 
 
 simpleGLmain.o:	simpleGLmain.cpp

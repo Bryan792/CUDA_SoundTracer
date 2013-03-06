@@ -15,6 +15,11 @@
 #include "types.h"
 #include "cudaRayTrace.h"
 
+#include "fmod/inc/fmod.h"
+#include "fmod/inc/fmod_errors.h"
+#include "fmod/wincompat.h"
+
+const int INTERFACE_UPDATETIME = 50;        // 50ms update for interface
 Camera * camera, *cam_d;
 PointLight *light, *l_d;
 Plane * planes, *p_d;
@@ -22,6 +27,15 @@ Sphere * spheres, *s_d;
 float theta, stheta;
 
 int lastx, lasty;
+
+FMOD_SYSTEM     *system;
+FMOD_SOUND      *sound1, *sound2, *sound3;
+FMOD_CHANNEL    *channel1 = 0, *channel2 = 0, *channel3 = 0;
+FMOD_RESULT      result;
+int              key;
+int              listenerflag = TRUE;
+FMOD_VECTOR      listenerpos  = { 0.0f, 0.0f, 0.0f }; 
+unsigned int     version;
 
 Camera* CameraInit();
 PointLight* LightInit();
@@ -57,6 +71,20 @@ extern "C" void setup_scene()
   light = LightInit();
   spheres = CreateSpheres();
   planes = CreatePlanes(); 
+
+  FMOD_System_Create(&system);
+  FMOD_System_GetVersion(system, &version);
+  FMOD_System_Init(system, 10, FMOD_INIT_NORMAL, NULL);
+  FMOD_System_CreateSound(system, "fmod/media/drumloop.wav", FMOD_SOFTWARE | FMOD_3D, 0, &sound1);
+  FMOD_Sound_Set3DMinMaxDistance(sound1, 4.0f, 10000.0f);
+  FMOD_Sound_SetMode(sound1, FMOD_LOOP_NORMAL);
+
+  FMOD_VECTOR pos = { -10.0f, -0.0f, 0.0f };
+  FMOD_VECTOR vel = {   0.0f,  0.0f, 0.0f };
+
+  FMOD_System_PlaySound(system, FMOD_CHANNEL_FREE, sound1, TRUE, &channel1);
+  FMOD_Channel_Set3DAttributes(channel1, &pos, &vel);
+  FMOD_Channel_SetPaused(channel1, FALSE);
 
   HANDLE_ERROR( cudaMalloc((void**)&cam_d, sizeof(Camera)) );
   HANDLE_ERROR( cudaMalloc(&p_d, sizeof(Plane)*NUM_PLANES) );
@@ -276,7 +304,13 @@ extern "C" void launch_kernel(uchar4* pos, unsigned int image_width,
   HANDLE_ERROR( cudaMemcpy(l_d, light, sizeof(PointLight), cudaMemcpyHostToDevice) );
 
   HANDLE_ERROR( cudaMemcpy(cam_d, camera,sizeof(Camera), cudaMemcpyHostToDevice) );
-
+  FMOD_VECTOR forward, up;
+  &listenerpos = &(camera->eye);
+  &forward = &(camera->lookAt);
+  &up = &(camera->lookUp);
+  FMOD_System_Set3DListenerAttributes(system, 0, &listenerpos, &vel, &forward, &up);
+  FMOD_System_Update(system);
+  
   HANDLE_ERROR( cudaMemcpy(s_d, spheres,sizeof(Sphere)*NUM_SPHERES, cudaMemcpyHostToDevice) );
 
   // The Kernel Call
@@ -457,8 +491,8 @@ __device__ float findDistance(Ray myRay, Camera * cam, Plane * planes, Sphere * 
     if(smallest == 0)
       return;
     total_distance += smallest
-    if(closestSphere == -1)
-    
+      if(closestSphere == -1)
+
   }
 }
 
