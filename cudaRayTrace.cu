@@ -27,16 +27,19 @@ Camera* CameraInit();
 PointLight* LightInit();
 Sphere* CreateSpheres();
 Plane* CreatePlanes();
+
 __host__ __device__ Point CreatePoint(float x, float y, float z);
 __host__ __device__ color_t CreateColor(float r, float g, float b);
 
 __global__ void CUDARayTrace(Camera * cam, Plane * f, PointLight *l, Sphere * s, uchar4 * position);
+__global__ void computeAudio(int ear_dir, Point * o_vec3, float * o_distance,  Camera * cam,Plane * planes, Sphere * spheres);
 
 __device__ color_t RayTrace(Ray r, Sphere* s, Plane* f, PointLight* l);
 __device__ color_t SphereShading(int sNdx, Ray r, Point p, Sphere* sphereList, PointLight* l);
 __device__ color_t Shading(Ray r, Point p, Point normalVector, PointLight* l, color_t diffuse, color_t ambient, color_t specular); 
 __device__ float SphereRayIntersection(Sphere* s, Ray r);
 __device__ float PlaneRayIntersection(Plane* s, Ray r);
+__device__ float findDistance(Ray myRay, Camera * cam, Plane * planes, Sphere * spheres);
 
 static void HandleError( cudaError_t err, const char * file, int line)
 {
@@ -408,16 +411,27 @@ Plane* CreatePlanes() {
 
   return planes;
 }
-  template<bool LEFTEAR>
-__global__ void computeAudio(Point * o_vec3, float * o_distance,  Camera * cam,Plane * planes, Sphere * spheres)
+// -1 for LEFTEAR, 1 for RIGHTEAR
+__global__ void computeAudio(int ear_dir, Point * o_vec3, float * o_distance,  Camera * cam,Plane * planes, Sphere * spheres)
 {
   Ray myRay;
-  myRay.origin = camera->origin;
+  
+  int row = blockIdx.y*blockDim.y + threadIdx.y;
+  int col = blockIdx.x*blockDim.x + threadIdx.x;
 
-  if(LEFTEAR)
-    myRay.direction;//TODO
-  else//RIGHTEAR
-    myRay.direction;//TODO
+  float tanVal = tan(FOV/2);
+  float rvaly = tanVal - (2 * tanVal / WINDOW_HEIGHT) * row;
+  float rvalx = -1 * WINDOW_WIDTH / WINDOW_HEIGHT * tanVal + (2 * tanVal / WINDOW_HEIGHT) * col;
+  rvalx*=ear_dir;
+  //float rvaly = //Find better way to do this
+  //float rvalx = 
+  
+  myRay.origin = cam->eye;
+  myRay.direction = cam->lookAt;
+  myRay.direction += (rvalx * cam->lookRight);
+  myRay.direction += (rvaly * cam->lookUp);
+  myRay.direction = glm::normalize(myRay.direction);
+  
   int index = threadIdx.y * blockDim.x + threadIdx.x;
 
   o_distance[index] = findDistance(myRay, cam, planes, spheres);
@@ -427,7 +441,8 @@ __device__ float findDistance(Ray myRay, Camera * cam, Plane * planes, Sphere * 
 {
   float total_distance = 0;
   Ray currentRay = myRay;
-  int i, closestSphere, closestPlane, t, smallest;
+  int i, closestSphere, closestPlane;
+  float smallest, t;
   for(int j = 0; j < 5; i++)//Loop for 5 reflections
   {
     i = 0;
@@ -435,8 +450,8 @@ __device__ float findDistance(Ray myRay, Camera * cam, Plane * planes, Sphere * 
     closestPlane = -1;
     smallest = 0;
     //FIND CLOSEST SPHERE ALONG RAY R
-    while (i < NUM_SPHERES) {
-      t = SphereRayIntersection(s + i, r);
+    while (i < NUM_SPHERES-1) {
+      t = SphereRayIntersection(spheres + i, currentRay);
 
       if (t > 0 && (closestSphere < 0 || t < smallest)) {
         smallest = t;
@@ -446,7 +461,7 @@ __device__ float findDistance(Ray myRay, Camera * cam, Plane * planes, Sphere * 
     }
     i=0;
     while (i < NUM_PLANES) {
-      t = PlaneRayIntersection(f + i, r);
+      t = PlaneRayIntersection(planes + i, currentRay);
       if (t > 0 && ( (closestSphere < 0 && closestPlane < 0) || t < smallest)) {//POSSIBLE LOGIC FIX CLOSESTSPHERE >1
         smallest = t;
         closestSphere = -1;
@@ -454,12 +469,26 @@ __device__ float findDistance(Ray myRay, Camera * cam, Plane * planes, Sphere * 
       }
       i++;
     } 
-    if(smallest == 0)
-      return;
-    total_distance += smallest
-    if(closestSphere == -1)
+    if(smallest == 0)//N0 INTERSECTIONS
+      return -1;
+    total_distance += smallest;
     
+    if(closestSphere == NUM_SPHERES-2)//The Speaker(Hit)
+      return total_distance;
+
+    currentRay.origin = currentRay.direction * smallest + currentRay.origin;
+    
+    if(closestPlane != -1)//Could be NEGATIVE currentRay Assume reflect is normalized
+    {
+      currentRay.direction = glm::reflect(-currentRay.direction, planes[closestPlane].normal);
+    }
+    else if(closestSphere < NUM_SPHERES-2)
+    {
+      currentRay.direction = glm::reflect(-currentRay.direction, currentRay.origin - spheres[closestSphere].center);
+    }
+    currentRay.direction = glm::normalize(currentRay.direction);
   }
+  return -1;
 }
 
 
