@@ -1,8 +1,8 @@
 /*
- * CPE 570 && CPE 458 Duet
- * Ray Tracer
- * Professor Christopher Lupo and Professor Zoe" Wood
- * Paul Armer(parmer), Bryan Ching(bcching), Matt Crussell(macrusse)
+ * CPE 458
+ * Ray Tracer/Sound Tracer
+ * Professor Christopher Lupo
+ * Bryan Ching(bcching), Matt Crussell(macrusse)
  */
 
 #include <stdio.h>
@@ -15,42 +15,34 @@
 #include "types.h"
 #include "cudaRayTrace.h"
 
-#include "fmod/inc/fmod.h"
-#include "fmod/inc/fmod_errors.h"
-#include "fmod/wincompat.h"
-
-const int INTERFACE_UPDATETIME = 50;        // 50ms update for interface
 Camera * camera, *cam_d;
 PointLight *light, *l_d;
 Plane * planes, *p_d;
 Sphere * spheres, *s_d;
+float * output_dist_d;
+Point * output_vec_d;
+Point * final_vec_d;
 float theta, stheta;
 
 int lastx, lasty;
-
-FMOD_SYSTEM     *asystem;
-FMOD_SOUND      *sound1, *sound2, *sound3;
-FMOD_CHANNEL    *channel1 = 0, *channel2 = 0, *channel3 = 0;
-FMOD_RESULT      result;
-int              key;
-int              listenerflag = TRUE;
-FMOD_VECTOR      listenerpos  = { 0.0f, 0.0f, 0.0f }; 
-unsigned int     version;
 
 Camera* CameraInit();
 PointLight* LightInit();
 Sphere* CreateSpheres();
 Plane* CreatePlanes();
+
 __host__ __device__ Point CreatePoint(float x, float y, float z);
 __host__ __device__ color_t CreateColor(float r, float g, float b);
 
 __global__ void CUDARayTrace(Camera * cam, Plane * f, PointLight *l, Sphere * s, uchar4 * position);
+__global__ void computeAudio(int ear_dir, Point * o_vec3, float * o_distance,  Camera * cam,Plane * planes, Sphere * spheres);
 
 __device__ color_t RayTrace(Ray r, Sphere* s, Plane* f, PointLight* l);
 __device__ color_t SphereShading(int sNdx, Ray r, Point p, Sphere* sphereList, PointLight* l);
 __device__ color_t Shading(Ray r, Point p, Point normalVector, PointLight* l, color_t diffuse, color_t ambient, color_t specular); 
 __device__ float SphereRayIntersection(Sphere* s, Ray r);
 __device__ float PlaneRayIntersection(Plane* s, Ray r);
+__device__ float findDistance(Ray myRay, Camera * cam, Plane * planes, Sphere * spheres);
 
 static void HandleError( cudaError_t err, const char * file, int line)
 {
@@ -71,25 +63,14 @@ extern "C" void setup_scene()
   light = LightInit();
   spheres = CreateSpheres();
   planes = CreatePlanes(); 
-
-  FMOD_System_Create(&asystem);
-//  FMOD_System_GetVersion(system, &version);
-  FMOD_System_Init(asystem, 10, FMOD_INIT_NORMAL, NULL);
-  FMOD_System_CreateSound(asystem, "fmod/media/drumloop.wav", FMOD_SOFTWARE | FMOD_3D, 0, &sound1);
-  FMOD_Sound_Set3DMinMaxDistance(sound1, 4.0f, 10000.0f);
-  FMOD_Sound_SetMode(sound1, FMOD_LOOP_NORMAL);
-
-//  FMOD_VECTOR pos = { -10.0f, -0.0f, 0.0f };
-  FMOD_VECTOR vel = {   0.0f,  0.0f, 0.0f };
-
-  FMOD_System_PlaySound(asystem, FMOD_CHANNEL_FREE, sound1, TRUE, &channel1);
-  FMOD_Channel_Set3DAttributes(channel1, (FMOD_VECTOR *) &(spheres->center), &vel);
-  FMOD_Channel_SetPaused(channel1, FALSE);
-
+  
   HANDLE_ERROR( cudaMalloc((void**)&cam_d, sizeof(Camera)) );
   HANDLE_ERROR( cudaMalloc(&p_d, sizeof(Plane)*NUM_PLANES) );
   HANDLE_ERROR( cudaMalloc(&l_d, sizeof(PointLight)) );
-  HANDLE_ERROR( cudaMalloc(&s_d,  sizeof(Sphere)*NUM_SPHERES));
+  HANDLE_ERROR( cudaMalloc(&s_d,  sizeof(Sphere)*NUM_SPHERES) );
+  HANDLE_ERROR( cudaMalloc(&output_dist_d, sizeof(float) * WINDOW_WIDTH * WINDOW_HEIGHT) );
+  HANDLE_ERROR( cudaMalloc(&output_vec_d, sizeof(Point) * WINDOW_WIDTH * WINDOW_HEIGHT) );
+  HANDLE_ERROR( cudaMalloc(&final_vec_d, sizeof(Point)));
 
   HANDLE_ERROR( cudaMemcpy(l_d, light, sizeof(PointLight), cudaMemcpyHostToDevice) );
 
@@ -290,6 +271,22 @@ extern "C" void misc(unsigned char key)
       }
   }
 }
+extern "C" void launch_audio_kernel(Point * left, Point * right)
+{
+  dim3 gridSize((WINDOW_WIDTH+15)/16, (WINDOW_HEIGHT+15)/16);
+  dim3 blockSize(16,16);
+  //dim3 gridSize(1,1);
+  //dim3 blockSize(1,2);
+  computeAudio<<<gridSize, blockSize>>>(1, output_vec_d, output_dist_d, cam_d, p_d, s_d);  
+  //computeAudio<<<gridSize, blockSize>>>(1, output_vec_d, output_dist_d, cam_d, p_d, s_d);  
+  //reduceVect<<<GRID, BLOCK>>>(output_dist_d, output_vec_d, final_vec_d);
+  //cudaMemcpy(left, final_vec_d, sizeof(Point), cudaMemcpyHostToDevice);
+  //computeAudio<<<1000, 1024>>>(1, output_vec_d, output_dist_d, cam_d, p_d, s_d);  
+  computeAudio<<<gridSize, blockSize>>>(-1, output_vec_d, output_dist_d, cam_d, p_d, s_d);  
+  //reduceVect<<<GRID, BLOCK>>>(output_dist_d, output_vec_d, final_vec_d);
+  //cudaMemcpy(left, final_vec_d, sizeof(Point), cudaMemcpyHostToDevice);
+
+}
 extern "C" void launch_kernel(uchar4* pos, unsigned int image_width, 
     unsigned int image_height, float time)
 {
@@ -304,10 +301,7 @@ extern "C" void launch_kernel(uchar4* pos, unsigned int image_width,
   HANDLE_ERROR( cudaMemcpy(l_d, light, sizeof(PointLight), cudaMemcpyHostToDevice) );
 
   HANDLE_ERROR( cudaMemcpy(cam_d, camera,sizeof(Camera), cudaMemcpyHostToDevice) );
-  FMOD_VECTOR vel = {0.0f, 0.0f, 0.0f};
-  FMOD_System_Set3DListenerAttributes(asystem, 0, (FMOD_VECTOR *) &(camera->eye), &vel,(FMOD_VECTOR *) &(camera->lookAt),(FMOD_VECTOR *) &(camera->lookUp));
-  FMOD_System_Update(asystem);
-  
+
   HANDLE_ERROR( cudaMemcpy(s_d, spheres,sizeof(Sphere)*NUM_SPHERES, cudaMemcpyHostToDevice) );
 
   // The Kernel Call
@@ -439,36 +433,48 @@ Plane* CreatePlanes() {
 
   return planes;
 }
-/*
-  template<bool LEFTEAR>
-__global__ void computeAudio(Point * o_vec3, float * o_distance,  Camera * cam,Plane * planes, Sphere * spheres)
+// -1 for LEFTEAR, 1 for RIGHTEAR
+__global__ void computeAudio(int ear_dir, Point * o_vec3, float * o_distance,  Camera * cam,Plane * planes, Sphere * spheres)
 {
   Ray myRay;
-  myRay.origin = camera->origin;
+  
+  int row = blockIdx.y*blockDim.y + threadIdx.y;
+  int col = blockIdx.x*blockDim.x + threadIdx.x;
 
-  if(LEFTEAR)
-    myRay.direction;//TODO
-  else//RIGHTEAR
-    myRay.direction;//TODO
+  float tanVal = tan(FOV/2);
+  float rvaly = tanVal - (2 * tanVal / WINDOW_HEIGHT) * row;
+  float rvalx = -1 * WINDOW_WIDTH / WINDOW_HEIGHT * tanVal + (2 * tanVal / WINDOW_HEIGHT) * col;
+  rvalx*=ear_dir;
+  
+  myRay.origin = cam->eye;
+  myRay.direction = cam->lookAt;
+  myRay.direction += (rvalx * cam->lookRight);
+  myRay.direction += (rvaly * cam->lookUp);
+  myRay.direction = glm::normalize(myRay.direction);
+  
   int index = threadIdx.y * blockDim.x + threadIdx.x;
 
-  o_distance[index] = findDistance(myRay, cam, planes, spheres);
+//  o_distance[index] = findDistance(myRay, cam, planes, spheres);
   o_vec3[index] = myRay.direction;
+  if(index == 0)
+  printf("%f\n", o_distance[index]);
 }
-__device__ float findDistance(Ray myRay, Camera * cam, Plane * f, Sphere * s)
+__device__ float findDistance(Ray myRay, Camera * cam, Plane * planes, Sphere * spheres)
 {
   float total_distance = 0;
   Ray currentRay = myRay;
-  int i, closestSphere, closestPlane, t, smallest;
-  for(int j = 0; j < 5; i++)//Loop for 5 reflections
+  int i, closestSphere, closestPlane;
+  float smallest, t;
+  
+  for(int j = 0; j < 3; i++)//Loop for 5 reflections
   {
     i = 0;
     closestSphere = -1; 
     closestPlane = -1;
     smallest = 0;
     //FIND CLOSEST SPHERE ALONG RAY R
-    while (i < NUM_SPHERES) {
-      t = SphereRayIntersection(s + i, r);
+    while (i < NUM_SPHERES-1) {
+      t = SphereRayIntersection(spheres + i, currentRay);
 
       if (t > 0 && (closestSphere < 0 || t < smallest)) {
         smallest = t;
@@ -478,7 +484,7 @@ __device__ float findDistance(Ray myRay, Camera * cam, Plane * f, Sphere * s)
     }
     i=0;
     while (i < NUM_PLANES) {
-      t = PlaneRayIntersection(f + i, r);
+      t = PlaneRayIntersection(planes + i, currentRay);
       if (t > 0 && ( (closestSphere < 0 && closestPlane < 0) || t < smallest)) {//POSSIBLE LOGIC FIX CLOSESTSPHERE >1
         smallest = t;
         closestSphere = -1;
@@ -486,14 +492,28 @@ __device__ float findDistance(Ray myRay, Camera * cam, Plane * f, Sphere * s)
       }
       i++;
     } 
-    if(smallest == 0)
-      return;
-    total_distance += smallest
-      if(closestSphere == -1)
+    if(smallest == 0)//N0 INTERSECTIONS
+      return -1;
+    total_distance += smallest;
+    
+    if(closestSphere == NUM_SPHERES-2)//The Speaker(Hit)
+      return total_distance;
 
+    currentRay.origin = currentRay.direction * smallest + currentRay.origin;
+    
+    if(closestPlane != -1)//Could be NEGATIVE currentRay Assume reflect is normalized
+    {
+      currentRay.direction = glm::reflect(-currentRay.direction, planes[closestPlane].normal);
+    }
+    else if(closestSphere < NUM_SPHERES-2)
+    {
+      currentRay.direction = glm::reflect(-currentRay.direction, currentRay.origin - spheres[closestSphere].center);
+    }
+    currentRay.direction = glm::normalize(currentRay.direction);
   }
+  return -1;
 }
-*/
+
 
 /*
  * CUDA global function which performs ray tracing. Responsible for initializing and writing to output vector
@@ -720,4 +740,12 @@ __device__ color_t Shading(Ray r, Point p, Point normalVector,
   total.b = glm::min(1.f, a.b + d.b + s.b);
   total.f = 1.f;
   return total;
+}
+int main(void)
+{
+  setup_scene();
+  Point left, right;
+  launch_audio_kernel(&left, &right);
+  cudaFree(spheres); 
+  return 0;
 }
