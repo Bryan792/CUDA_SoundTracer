@@ -36,7 +36,7 @@ __host__ __device__ color_t CreateColor(float r, float g, float b);
 
 __global__ void CUDARayTrace(Camera * cam, Plane * f, PointLight *l, Sphere * s, uchar4 * position);
 __global__ void computeAudio(int ear_dir, Point * o_vec3, float * o_distance,  Camera * cam,Plane * planes, Sphere * spheres);
-template<int BLOCK_SIZE> __global__ void reduce(float *g_idata, float *g_odata, unsigned int n);
+__global__ void reduce(float *g_idata, float *g_odata, unsigned int n);
 
 __device__ color_t RayTrace(Ray r, Sphere* s, Plane* f, PointLight* l);
 __device__ color_t SphereShading(int sNdx, Ray r, Point p, Sphere* sphereList, PointLight* l);
@@ -278,12 +278,19 @@ extern "C" void launch_audio_kernel(Point * left, Point * right)
 {
   dim3 gridSize(X_SIZE/16, Y_SIZE/16);
   dim3 blockSize(16,16);
-  float *reduced_dist_d;
+  float *reduced_dist_d, *final_dist_d;
+  float dist;
   int reductDim = X_SIZE*Y_SIZE/1024;
   HANDLE_ERROR( cudaMalloc(&reduced_dist_d, sizeof(float) * reductDim) );
+  HANDLE_ERROR( cudaMalloc(&final_dist_d, sizeof(float)));
   
   computeAudio<<<gridSize, blockSize>>>(1, output_vec_d, output_dist_d, cam_d, p_d, s_d);  
-  reduce<reductDim><<<reductDim, 1024>>>(output_dist_d, reduced_dist_d, X_SIZE*Y_SIZE);
+  reduce<<<reductDim, 1024>>>(output_dist_d, reduced_dist_d, X_SIZE*Y_SIZE);
+  reduce<<<1,reductDim>>>(reduced_dist_d, final_dist_d, reductDim);
+  HANDLE_ERROR( cudaMemcpy(&dist, final_dist_d, sizeof(float), cudaMemcpyDeviceToHost));
+  printf("I DID SOMETHING: %f\n", dist);
+  
+  
   //cudaMemcpy(left, final_vec_d, sizeof(Point), cudaMemcpyHostToDevice);
   computeAudio<<<gridSize, blockSize>>>(-1, output_vec_d, output_dist_d, cam_d, p_d, s_d);  
   //reduceVect<<<GRID, BLOCK>>>(output_dist_d, output_vec_d, final_vec_d);
@@ -442,10 +449,11 @@ Plane* CreatePlanes() {
     This version uses n/2 threads --
     it performs the first level of reduction when reading from global memory
 */
-template<int BLOCK_SIZE>
+//template<int BLOCK_SIZE>
+#define BLOCK_SIZE 1024
 __global__ void reduce(float *g_idata, float *g_odata, unsigned int n)
 {
-    float *sdata[BLOCK_SIZE];
+    __shared__ float sdata[BLOCK_SIZE];
 
     // perform first level of reduction,
     // reading from global memory, writing to shared memory
