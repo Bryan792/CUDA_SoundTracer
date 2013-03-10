@@ -1,18 +1,30 @@
 CC=nvcc
 LD=nvcc
-CFLAGS=  -c -lGL -lglut -DGL_GLEXT_PROTOTYPES -lGLU #-O3
-LDFLAGS=   -lGL -lglut -DGL_GLEXT_PROTOTYPES -lGLU -lcudart #-O3
-CUDAFLAGS= -G -g -c -arch=sm_21 #-O3
+CFLAGS= -O3 -c -lGL -lglut -DGL_GLEXT_PROTOTYPES -lGLU 
+LDFLAGS= -O3  -lGL -lglut -DGL_GLEXT_PROTOTYPES -lGLU -lcudart
+CUDAFLAGS= -O3 -c -arch=sm_21
 
-ALL= cudaRayTrace.o
+ALL= callbacksPBO.o cudaRayTrace.o simpleGLmain.o simplePBO.o
 
 all= $(ALL) RTRT
 
 RT:	$(ALL)
-	$(CC) $(LDFLAGS) $(ALL) -o RTRT
+	$(CC) $(LDFLAGS) $(ALL) -o RTRT fmod/lib/libfmodex64.so 
+
+callbacksPBO.o:	callbacksPBO.cpp
+	$(CC) $(CFLAGS) -o $@ $<
+
+kernelPBO.o:	kernelPBO.cu
+	$(CC) $(CUDAFLAGS) -o $@ $<
 
 cudaRayTrace.o:	cudaRayTrace.cu cudaRayTrace.h
 	$(CC) $(CUDAFLAGS) -o $@ $< 
+
+simpleGLmain.o:	simpleGLmain.cpp
+	$(CC) $(CFLAGS) -o $@ $<
+
+simplePBO.o: simplePBO.cpp
+	$(CC) $(CFLAGS) -o $@ $<
 
 clean:
 	rm -rf core* *.o *.gch $(ALL) junk*
