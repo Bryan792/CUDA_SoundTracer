@@ -7,6 +7,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <cfloat>
 #include <time.h>
 #include "glm/glm.hpp"
 #include <math.h>
@@ -460,7 +461,7 @@ __global__ void reduce(float *g_idata, float *g_odata, unsigned int n)
     unsigned int tid = threadIdx.x;
     unsigned int i = blockIdx.x*(blockDim.x*2) + threadIdx.x;
     float temp;
-    sdata[tid] = (i < n) ? g_idata[i] : 0;
+    sdata[tid] = (i < n) ? g_idata[i] : FLT_MAX;
     if (i + blockDim.x < n && (temp = g_idata[i+blockDim.x]) < sdata[tid])
         sdata[tid] = temp;
 
@@ -505,8 +506,8 @@ __global__ void computeAudio(int ear_dir, Point * o_vec3, float * o_distance,  C
 
   o_distance[index] = findDistance(myRay, cam, planes, spheres);
   o_vec3[index] = myRay.direction;
-  if(o_distance[index] > 0)
-    printf("%f = I printed, tx = %d, ty = %d, bx = %d, by = %d\n", o_distance[index],threadIdx.x, threadIdx.y, blockIdx.x, blockIdx.y);
+  //if(o_distance[index] > 0)
+  //  printf("%f = I printed, tx = %d, ty = %d, bx = %d, by = %d\n", o_distance[index],threadIdx.x, threadIdx.y, blockIdx.x, blockIdx.y);
 
 }
 __device__ float findDistance(Ray myRay, Camera * cam, Plane * planes, Sphere * spheres)
@@ -543,7 +544,7 @@ __device__ float findDistance(Ray myRay, Camera * cam, Plane * planes, Sphere * 
       i++;
     } 
     if(smallest == 0)//N0 INTERSECTIONS
-      return -1;
+      return FLT_MAX;
     total_distance += smallest;
 
     if(closestSphere == NUM_SPHERES-2)//The Speaker(Hit)
@@ -561,7 +562,7 @@ __device__ float findDistance(Ray myRay, Camera * cam, Plane * planes, Sphere * 
     }
     currentRay.direction = glm::normalize(currentRay.direction);
   }
-  return -1;
+  return FLT_MAX;
 }
 
 
@@ -793,6 +794,7 @@ __device__ color_t Shading(Ray r, Point p, Point normalVector,
 }
 int main(void)
 {
+  srand(time(0));
   setup_scene();
   Point left, right;
   Sphere temp;
