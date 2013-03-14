@@ -101,7 +101,6 @@ extern "C" void setup_scene()
 
     FMOD_System_PlaySound(asystem, FMOD_CHANNEL_FREE, sound1, TRUE, &channel2);
     FMOD_System_PlaySound(asystem, FMOD_CHANNEL_FREE, sound1, TRUE, &channel1);
-  // FMOD_System_PlaySound(asystem, FMOD_CHANNEL_FREE, sound1, TRUE, &channel1);
   // FMOD_Channel_Set3DAttributes(channel1, (FMOD_VECTOR *) &(spheres->center), &vel);
    FMOD_Channel_SetPaused(channel1, FALSE);
    FMOD_Channel_SetPaused(channel2, FALSE);
@@ -444,7 +443,7 @@ PointLight* LightInit() {
   l->diffuse = CreateColor(0.6, 0.6, 0.6);
   l->specular = CreateColor(0.4, 0.4, 0.4);
 
-  l->position = CreatePoint(0, 200, -1250);
+  l->position = CreatePoint(0, 400, -750);
 
   return l;
 }
@@ -488,8 +487,8 @@ Sphere* CreateSpheres() {
     randg = (rand()%1000) /1000.f ;
     randb = (rand()%1000) /1000.f ;
     spheres[num].radius = 50. - rand() % 30;
-    spheres[num].center = CreatePoint(600 - rand() % 1200,
-        0,
+    spheres[num].center = CreatePoint(0,//600 - rand() % 1200,
+        100,
     //    700 - rand() % 1100,
         500 - rand() %2500);
     spheres[num].ambient = CreateColor(randr, randg, randb);
@@ -524,7 +523,7 @@ Plane* CreatePlanes() {
   //planes[1].diffuse = CreateColor(10,10,10);
 
   planes[2].normal = CreatePoint(0,0, 1) ;
-  planes[2].center = CreatePoint(0,0,-2000);
+  planes[2].center = CreatePoint(0,0,-1000);
   planes[2].ambient = planes[2].diffuse = planes[2].specular = CreateColor(1,1,1);
 
   planes[3].normal = CreatePoint(1,0,0) ;
@@ -691,7 +690,8 @@ __device__ float findDistance(Ray myRay, Camera * cam, Plane * planes, Sphere * 
 
     if(closestSphere == NUM_SPHERES-2)//The Speaker(Hit)
       return total_distance; //* glm::pow(5, reflections);
-    total_distance+= 10000000; //Loss of Energy Due to Reflection
+    
+    total_distance*= 5; //Loss of Energy Due to Reflection
     currentRay.origin = currentRay.direction * smallest + currentRay.origin;
 
 
@@ -702,7 +702,8 @@ __device__ float findDistance(Ray myRay, Camera * cam, Plane * planes, Sphere * 
     }
     else if(closestSphere < NUM_SPHERES-2)
     {
-      currentRay.direction = -glm::reflect(-glm::normalize(currentRay.direction), glm::normalize(spheres[closestSphere].center)-currentRay.origin);
+//      currentRay.direction = -glm::reflect(-glm::normalize(currentRay.direction), glm::normalize(spheres[closestSphere].center)-currentRay.origin);
+      currentRay.direction = -glm::reflect(-glm::normalize(currentRay.direction), glm::normalize(currentRay.origin - spheres[closestSphere].center));
     }
     currentRay.direction = glm::normalize(currentRay.direction);
     //if(j==0)
