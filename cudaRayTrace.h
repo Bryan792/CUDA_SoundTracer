@@ -11,7 +11,7 @@
 #define WINDOW_WIDTH 1024
 #define WINDOW_HEIGHT 1024
 #define SCREEN_DISTANCE -1
-#define NUM_SPHERES 200 
+#define NUM_SPHERES 2 
 #define NUM_PLANES 6 
 
 #define AMBIENT .2

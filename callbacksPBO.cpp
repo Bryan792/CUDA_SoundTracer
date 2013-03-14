@@ -101,6 +101,8 @@ void keyboard(unsigned char key, int x, int y)
    case('9'):
    case('0'):
    case('p'):
+   case('7'):
+   case('8'):
    case('['):
    case(']'):
      misc(key);
