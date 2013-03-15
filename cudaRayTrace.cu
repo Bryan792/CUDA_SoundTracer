@@ -91,7 +91,8 @@ extern "C" void setup_scene()
   FMOD_System_Create(&asystem);
   //  FMOD_System_GetVersion(system, &version);
   FMOD_System_Init(asystem, 10, FMOD_INIT_NORMAL, NULL);
-  FMOD_System_CreateSound(asystem, "fmod/media/drumloop.wav", FMOD_SOFTWARE | FMOD_3D, 0, &sound1);
+  //FMOD_System_CreateSound(asystem, "fmod/media/swish.wav", FMOD_SOFTWARE | FMOD_3D, 0, &sound1);
+  FMOD_System_CreateSound(asystem, "808-clap.wav", FMOD_SOFTWARE | FMOD_3D, 0, &sound1);
   
   //FMOD_Sound_Set3DMinMaxDistance(sound1, 4.0f, 10000000.0f);
   FMOD_Sound_SetMode(sound1, FMOD_LOOP_NORMAL);
@@ -337,7 +338,7 @@ extern "C" void launch_audio_kernel(Point * left, Point * right)
   float distl;
   float distr;
   float temp;
-  printf("rayDistanced = %d\n", rayDistance);
+//  printf("rayDistanced = %d\n", rayDistance);
   computeAudio<<<gridSize, blockSize>>>(1,1,rayDistance, output_vec_d, output_dist_d, cam_d, p_d, s_d);  
   cudaThreadSynchronize();
   reduce<<<reductDim, 1024>>>(output_dist_d, output_vec_d,reduced_dist_d, reduced_vec_d, X_SIZE*Y_SIZE);
@@ -399,10 +400,11 @@ extern "C" void launch_audio_kernel(Point * left, Point * right)
   }
 
 
-  printf("I DID SOMETHING: (%f, %f, %f, %f)\n", left->x, left->y, left->z, temp);
+//  printf("I DID SOMETHING: (%f, %f, %f, %f)\n", left->x, left->y, left->z, temp);
   *left /= 750;
   *right /= 1000;
-  
+  *left *= -1; 
+  //printf("I DID SOMETHING: (%f, %f, %f, %f)\n", left->x, left->y, left->z, temp);
   if(temp < 1000000)
   {
 
@@ -525,7 +527,7 @@ Sphere* CreateSpheres() {
     randg = (rand()%1000) /1000.f ;
     randb = (rand()%1000) /1000.f ;
     spheres[num].radius = 50. - rand() % 30;
-    spheres[num].center = CreatePoint(0,//600 - rand() % 1200,
+    spheres[num].center = CreatePoint(600 - rand() % 1200,
         100,
     //    700 - rand() % 1100,
         500 - rand() %2500);
@@ -672,8 +674,8 @@ __global__ void computeAudio(int ear_dir, int forward, int rayDistance, Point * 
   
   myRay.direction = glm::normalize(myRay.direction);
 
-  if(index == X_SIZE-1)
-printf("%f %d %d %f %f\n", rvalz, row, col, rad, glm::sin(3.141592/2));
+  //if(index == X_SIZE-1)
+//printf("%f %d %d %f %f\n", rvalz, row, col, rad, glm::sin(3.141592/2));
     //  printf("Direction = (%f, %f, %f)\n", myRay.direction.x, myRay.direction.y, myRay.direction.z);
 
 
