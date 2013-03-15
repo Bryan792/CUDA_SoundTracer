@@ -496,7 +496,7 @@ Sphere* CreateSpheres() {
     spheres[num].specular = CreateColor(randr, randg, randb);
     num++;
   }
-
+  spheres[NUM_SPHERES -2].ambient = CreateColor(300,300,240);
 
   spheres[NUM_SPHERES-1].radius=30;
   spheres[NUM_SPHERES-1].center=light->position;
@@ -690,8 +690,8 @@ __device__ float findDistance(Ray myRay, Camera * cam, Plane * planes, Sphere * 
 
     if(closestSphere == NUM_SPHERES-2)//The Speaker(Hit)
       return total_distance; //* glm::pow(5, reflections);
-    
-    total_distance*= 5; //Loss of Energy Due to Reflection
+    total_distance+= 500; 
+    //total_distance*= 2; //Loss of Energy Due to Reflection
     currentRay.origin = currentRay.direction * smallest + currentRay.origin;
 
 
@@ -702,8 +702,8 @@ __device__ float findDistance(Ray myRay, Camera * cam, Plane * planes, Sphere * 
     }
     else if(closestSphere < NUM_SPHERES-2)
     {
-//      currentRay.direction = -glm::reflect(-glm::normalize(currentRay.direction), glm::normalize(spheres[closestSphere].center)-currentRay.origin);
       currentRay.direction = -glm::reflect(-glm::normalize(currentRay.direction), glm::normalize(currentRay.origin - spheres[closestSphere].center));
+    
     }
     currentRay.direction = glm::normalize(currentRay.direction);
     //if(j==0)
