@@ -20,7 +20,7 @@
 #include "fmod/inc/fmod_errors.h"
 #include "fmod/wincompat.h"
 
-#define X_SIZE 8192
+#define X_SIZE 1024 
 #define Y_SIZE 128
 
 
@@ -58,7 +58,7 @@ __host__ __device__ Point CreatePoint(float x, float y, float z);
 __host__ __device__ color_t CreateColor(float r, float g, float b);
 
 __global__ void CUDARayTrace(Camera * cam, Plane * f, PointLight *l, Sphere * s, uchar4 * position);
-__global__ void computeAudio(int ear_dir,int rayDistance, Point * o_vec3, float * o_distance,  Camera * cam,Plane * planes, Sphere * spheres);
+__global__ void computeAudio(int ear_dir,int forward, int rayDistance, Point * o_vec3, float * o_distance,  Camera * cam,Plane * planes, Sphere * spheres);
 __global__ void reduce(float *g_idata, Point *g_ivec, float *g_odata, Point * g_ovec, unsigned int n);
 
 __device__ color_t RayTrace(Ray r, Sphere* s, Plane* f, PointLight* l);
@@ -336,10 +336,9 @@ extern "C" void launch_audio_kernel(Point * left, Point * right)
   Point vec;
   float distl;
   float distr;
-
-
+  float temp;
   printf("rayDistanced = %d\n", rayDistance);
-  computeAudio<<<gridSize, blockSize>>>(1,rayDistance, output_vec_d, output_dist_d, cam_d, p_d, s_d);  
+  computeAudio<<<gridSize, blockSize>>>(1,1,rayDistance, output_vec_d, output_dist_d, cam_d, p_d, s_d);  
   cudaThreadSynchronize();
   reduce<<<reductDim, 1024>>>(output_dist_d, output_vec_d,reduced_dist_d, reduced_vec_d, X_SIZE*Y_SIZE);
   cudaThreadSynchronize();
@@ -349,23 +348,62 @@ extern "C" void launch_audio_kernel(Point * left, Point * right)
   HANDLE_ERROR( cudaMemcpy(&distl, final_dist_d, sizeof(float), cudaMemcpyDeviceToHost));
   HANDLE_ERROR( cudaMemcpy(&vec, final_vec_d, sizeof(Point), cudaMemcpyDeviceToHost));
   *left = vec * distl; 
-  printf("I DID SOMETHING: (%f, %f, %f, %f)\n", left->x, left->y, left->z, distl);
+  temp = distl;
+  //printf("I DID SOMETHING: (%f, %f, %f, %f)\n", left->x, left->y, left->z, distl);
 
-  computeAudio<<<gridSize, blockSize>>>(-1, rayDistance, output_vec_d, output_dist_d, cam_d, p_d, s_d);  
+  computeAudio<<<gridSize, blockSize>>>(1,-1,rayDistance, output_vec_d, output_dist_d, cam_d, p_d, s_d);  
   cudaThreadSynchronize();
   reduce<<<reductDim, 1024>>>(output_dist_d, output_vec_d,reduced_dist_d, reduced_vec_d, X_SIZE*Y_SIZE);
   cudaThreadSynchronize();
   reduce<<<1,reductDim>>>(reduced_dist_d, reduced_vec_d, final_dist_d, final_vec_d, reductDim);
-  HANDLE_ERROR( cudaMemcpy(&distr, final_dist_d, sizeof(float), cudaMemcpyDeviceToHost));
+  //cudaThreadSynchronize();
+
+  HANDLE_ERROR( cudaMemcpy(&distl, final_dist_d, sizeof(float), cudaMemcpyDeviceToHost));
   HANDLE_ERROR( cudaMemcpy(&vec, final_vec_d, sizeof(Point), cudaMemcpyDeviceToHost));
-  *right = vec * distr; 
+  if(distl < temp)
+  {
+  *left = vec * distl; 
+  temp = distl;
+  }
+
+  //printf("I DID SOMETHING: (%f, %f, %f, %f)\n", left->x, left->y, left->z, distl);
+  
+  computeAudio<<<gridSize, blockSize>>>(-1,1, rayDistance, output_vec_d, output_dist_d, cam_d, p_d, s_d);  
+  cudaThreadSynchronize();
+  reduce<<<reductDim, 1024>>>(output_dist_d, output_vec_d,reduced_dist_d, reduced_vec_d, X_SIZE*Y_SIZE);
+  cudaThreadSynchronize();
+  reduce<<<1,reductDim>>>(reduced_dist_d, reduced_vec_d, final_dist_d, final_vec_d, reductDim);
+  HANDLE_ERROR( cudaMemcpy(&distl, final_dist_d, sizeof(float), cudaMemcpyDeviceToHost));
+  HANDLE_ERROR( cudaMemcpy(&vec, final_vec_d, sizeof(Point), cudaMemcpyDeviceToHost));
+  //*right = vec * distr; 
+  if(distl < temp)
+  {
+  *left = vec * distl; 
+  temp = distl;
+  }
+
+//  printf("I DID SOMETHING: (%f, %f, %f, %f)\n", left->x, left->y, left->z, distl);
+  
+  computeAudio<<<gridSize, blockSize>>>(-1,-1, rayDistance, output_vec_d, output_dist_d, cam_d, p_d, s_d);  
+  cudaThreadSynchronize();
+  reduce<<<reductDim, 1024>>>(output_dist_d, output_vec_d,reduced_dist_d, reduced_vec_d, X_SIZE*Y_SIZE);
+  cudaThreadSynchronize();
+  reduce<<<1,reductDim>>>(reduced_dist_d, reduced_vec_d, final_dist_d, final_vec_d, reductDim);
+  HANDLE_ERROR( cudaMemcpy(&distl, final_dist_d, sizeof(float), cudaMemcpyDeviceToHost));
+  HANDLE_ERROR( cudaMemcpy(&vec, final_vec_d, sizeof(Point), cudaMemcpyDeviceToHost));
+  //*right = vec * distr; 
+  if(distl < temp)
+  {
+  *left = vec * distl; 
+  temp = distl;
+  }
 
 
-  printf("I DID SOMETHING: (%f, %f, %f, %f)\n", right->x, right->y, right->z, distr);
-  *left /= 1000;
+  printf("I DID SOMETHING: (%f, %f, %f, %f)\n", left->x, left->y, left->z, temp);
+  *left /= 750;
   *right /= 1000;
   
-  if(distl < 100000000000)
+  if(temp < 1000000)
   {
 
     FMOD_Channel_Set3DAttributes(channel2, (FMOD_VECTOR *) left, NULL);
@@ -373,13 +411,13 @@ extern "C" void launch_audio_kernel(Point * left, Point * right)
   }
   else
     FMOD_Channel_SetMute(channel2, TRUE);
-
+/*
   if(distr < 100000000000)
   {
     FMOD_Channel_Set3DAttributes(channel1, (FMOD_VECTOR *) right, NULL);
     FMOD_Channel_SetMute(channel1, FALSE);
   }
-  else
+  else*/
     FMOD_Channel_SetMute(channel1, TRUE);
 
 }
@@ -398,7 +436,7 @@ extern "C" void launch_kernel(uchar4* pos, unsigned int image_width,
   HANDLE_ERROR( cudaMemcpy(cam_d, camera,sizeof(Camera), cudaMemcpyHostToDevice) );
   FMOD_VECTOR vel = {0.0f, 0.0f, 0.0f};
   Point temp = camera->eye;
-  temp/=1000;
+  temp/=750;
   FMOD_System_Set3DListenerAttributes(asystem, 0, (FMOD_VECTOR *) &(temp), &vel,(FMOD_VECTOR *) &(camera->lookAt),(FMOD_VECTOR *) &(camera->lookUp));
   FMOD_System_Update(asystem);
 
@@ -595,7 +633,7 @@ __global__ void reduce(float *g_idata,Point *g_ivec, float *g_odata, Point * g_o
 
 
 // -1 for LEFTEAR, 1 for RIGHTEAR
-__global__ void computeAudio(int ear_dir, int rayDistance, Point * o_vec3, float * o_distance,  Camera * cam,Plane * planes, Sphere * spheres)
+__global__ void computeAudio(int ear_dir, int forward, int rayDistance, Point * o_vec3, float * o_distance,  Camera * cam,Plane * planes, Sphere * spheres)
 {
   Ray myRay;
 
@@ -607,37 +645,43 @@ __global__ void computeAudio(int ear_dir, int rayDistance, Point * o_vec3, float
   float rvaly = tanVal - (2 * tanVal / Y_SIZE) * row;
   //float rvalz = tanVal - (2 * tanVal / X_SIZE) * col;
   
-  float rvalz = -1 * X_SIZE / Y_SIZE * tanVal + (2 * tanVal / Y_SIZE) * col;
+  //float rvalz = -1 * X_SIZE / Y_SIZE * tanVal + (2 * tanVal / Y_SIZE) * col;
+//  float rvalz = col/1000;
+  float rad = (float) col / X_SIZE * 3.141592 / 2.f;
+  float rvalz = glm::sin(rad);
+  float rvalx = glm::cos(rad);
+
   //float rvalz = 1 - 2*col/X_SIZE;
   //float rvalz = col/X_SIZE - .5;
-  rvalz*=rayDistance;
-  rvaly*=rayDistance/2;
+//  rvalz*=rayDistance;
+//  rvaly*=rayDistance/2;
   //if(row == 1000 && col == 634)
   //  printf("%f\n", rvalx);
   //rvalx*=ear_dir;
 
   myRay.origin = cam->eye;
 
-  myRay.direction = cam->lookRight;
+  myRay.direction = cam->lookRight * rvalx;
 
 
   myRay.direction += (rvaly * cam->lookUp);
   myRay.direction += rvalz * cam->lookAt;
 
   myRay.direction.x *= ear_dir;
-
+  myRay.direction.z *= forward;
+  
   myRay.direction = glm::normalize(myRay.direction);
 
-  //if(index == 0)
-  //  printf("%f\n", myRay.direction.x);
-
-  //if(index == 0)
-  //printf("Direction = (%f, %f, %f)\n", myRay.direction.x, myRay.direction.y, myRay.direction.z);
+  if(index == X_SIZE-1)
+printf("%f %d %d %f %f\n", rvalz, row, col, rad, glm::sin(3.141592/2));
+    //  printf("Direction = (%f, %f, %f)\n", myRay.direction.x, myRay.direction.y, myRay.direction.z);
 
 
   o_distance[index] = findDistance(myRay, cam, planes, spheres);
   o_vec3[index] = myRay.direction;
   //if(o_distance[index] != FLT_MAX)
+//  if(row == 0 && col == X_SIZE)
+//  printf("Distance = (%f)\n", o_distance[index]);
   //if(ear_dir > 0);
   //    o_distance[index] = 1;
   //if(o_vec3[index].x < 0)
