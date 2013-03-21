@@ -22,9 +22,8 @@
 
 #define X_SIZE 1024 
 #define Y_SIZE 128
+#define BLOCK_SIZE 1024
 
-
-//const int INTERFACE_UPDATETIME = 50;        // 50ms update for interface
 Camera * camera, *cam_d;
 PointLight *light, *l_d;
 Plane * planes, *p_d;
@@ -32,7 +31,6 @@ Sphere * spheres, *s_d;
 float * output_dist_d;
 Point * output_vec_d;
 float theta, stheta;
-int rayDistance;
 int lastx, lasty;
 float *reduced_dist_d, *final_dist_d;
 Point *reduced_vec_d, *final_vec_d;
@@ -57,7 +55,7 @@ __host__ __device__ Point CreatePoint(float x, float y, float z);
 __host__ __device__ color_t CreateColor(float r, float g, float b);
 
 __global__ void CUDARayTrace(Camera * cam, Plane * f, PointLight *l, Sphere * s, uchar4 * position);
-__global__ void computeAudio(int ear_dir,int forward, int rayDistance, Point * o_vec3, float * o_distance,  Camera * cam,Plane * planes, Sphere * spheres);
+__global__ void computeAudio(int ear_dir,int forward, Point * o_vec3, float * o_distance,  Camera * cam,Plane * planes, Sphere * spheres);
 __global__ void reduce(float *g_idata, Point *g_ivec, float *g_odata, Point * g_ovec, unsigned int n);
 
 __device__ color_t RayTrace(Ray r, Sphere* s, Plane* f, PointLight* l);
@@ -67,6 +65,10 @@ __device__ float SphereRayIntersection(Sphere* s, Ray r);
 __device__ float PlaneRayIntersection(Plane* s, Ray r);
 __device__ float findDistance(Ray myRay, Camera * cam, Plane * planes, Sphere * spheres);
 
+
+/* 
+ *  Handles CUDA errors, taking from provided sample code on clupo site
+ */
 static void HandleError( cudaError_t err, const char * file, int line)
 {
   if(err !=cudaSuccess){
@@ -76,35 +78,29 @@ static void HandleError( cudaError_t err, const char * file, int line)
 }
 #define HANDLE_ERROR( err ) (HandleError( err, __FILE__, __LINE__ ))
 
-/* 
- *  Handles CUDA errors, taking from provided sample code on clupo site
+/*
+ * Sets up Video/Audio Scene information
  */
 extern "C" void setup_scene()
 {
   HANDLE_ERROR(cudaDeviceSetCacheConfig(cudaFuncCachePreferL1));
+  
+  //SCENE SETUP
   camera = CameraInit();
   light = LightInit();
   spheres = CreateSpheres();
   planes = CreatePlanes(); 
 
+  //FMOD SOUND SETUP
   FMOD_System_Create(&asystem);
-  //  FMOD_System_GetVersion(system, &version);
   FMOD_System_Init(asystem, 10, FMOD_INIT_NORMAL, NULL);
-  //FMOD_System_CreateSound(asystem, "fmod/media/swish.wav", FMOD_SOFTWARE | FMOD_3D, 0, &sound1);
   FMOD_System_CreateSound(asystem, "808-clap.wav", FMOD_SOFTWARE | FMOD_3D, 0, &sound1);
-  
-  //FMOD_Sound_Set3DMinMaxDistance(sound1, 4.0f, 10000000.0f);
   FMOD_Sound_SetMode(sound1, FMOD_LOOP_NORMAL);
-
-  //  FMOD_VECTOR pos = { -10.0f, -0.0f, 0.0f };
-  //FMOD_VECTOR vel = {   0.0f,  0.0f, 0.0f };
-
-    FMOD_System_PlaySound(asystem, FMOD_CHANNEL_FREE, sound1, TRUE, &channel2);
-    FMOD_System_PlaySound(asystem, FMOD_CHANNEL_FREE, sound1, TRUE, &channel1);
-  // FMOD_Channel_Set3DAttributes(channel1, (FMOD_VECTOR *) &(spheres->center), &vel);
-   FMOD_Channel_SetPaused(channel1, FALSE);
-   FMOD_Channel_SetPaused(channel2, FALSE);
   
+  FMOD_System_PlaySound(asystem, FMOD_CHANNEL_FREE, sound1, TRUE, &channel1);
+  FMOD_Channel_SetPaused(channel1, FALSE);
+
+  //CUDA MALLOCS
   HANDLE_ERROR( cudaMalloc((void**)&cam_d, sizeof(Camera)) );
   HANDLE_ERROR( cudaMalloc(&p_d, sizeof(Plane)*NUM_PLANES) );
   HANDLE_ERROR( cudaMalloc(&l_d, sizeof(PointLight)) );
@@ -116,18 +112,23 @@ extern "C" void setup_scene()
   HANDLE_ERROR( cudaMalloc(&reduced_vec_d, sizeof(Point) * reductDim) );
   HANDLE_ERROR( cudaMalloc(&final_vec_d, sizeof(Point)));
 
+  //CUDA MEMCPYS
   HANDLE_ERROR( cudaMemcpy(l_d, light, sizeof(PointLight), cudaMemcpyHostToDevice) );
   HANDLE_ERROR( cudaMemcpy(cam_d, camera,sizeof(Camera), cudaMemcpyHostToDevice) );
   HANDLE_ERROR( cudaMemcpy(p_d, planes,sizeof(Plane)*NUM_PLANES, cudaMemcpyHostToDevice) );
   HANDLE_ERROR( cudaMemcpy(s_d, spheres,sizeof(Sphere)*NUM_SPHERES, cudaMemcpyHostToDevice) );
-  
+
+
+  //INIT VALUES
   theta = 0;
   stheta = 0;
   lastx = -1;
   lasty = -1;
-  rayDistance = 20;
 }
 
+/*
+ * Controls Perspective movement of camera
+ */
 extern "C" void ijklMove(int y, int x)
 {
   float sin_theta_x, cos_theta_x, sin_theta_y,cos_theta_y;
@@ -159,9 +160,9 @@ extern "C" void ijklMove(int y, int x)
   camera->lookRight = glm::normalize(CreatePoint(cos_theta_y , 0 , sin_theta_y));
   camera->lookUp = glm::normalize(CreatePoint(0,cos_theta_x, sin_theta_x));
 }
-
-
-
+/*
+ * Controls directional movement of camera location
+ */
 extern "C" void wasdMove(unsigned char key)
 {
   Point set;
@@ -189,6 +190,9 @@ extern "C" void wasdMove(unsigned char key)
   }
   camera->eye += move;
 }
+/*
+ * Control Misc Keyboard Commands of Virtual Room
+ */
 extern "C" void misc(unsigned char key)
 {
   Point center;
@@ -302,108 +306,108 @@ extern "C" void misc(unsigned char key)
         HANDLE_ERROR( cudaMemcpy(p_d, planes,sizeof(Plane)*NUM_PLANES, cudaMemcpyHostToDevice) );
         break;
       }
-      case('8'):
-      {
-        rayDistance++;
-        break;
-      }
-      case('7'):
-        rayDistance = rayDistance - 1 > 0? rayDistance-1: 0;
-        break;
   }
 }
-
-extern "C" void launch_audio_kernel(Point * left, Point * right)
+/*
+ * Launches Audio kernel for 4 quadrants, saves minimum distance and sets sound source to that point
+ */
+extern "C" void launch_audio_kernel()
 {
   dim3 gridSize(X_SIZE/16, Y_SIZE/16);
   dim3 blockSize(16,16);
 
-  float distl;
-  Point vec;
+  float dist;
+  Point vec, min_vec;
   float temp;
+
+  //QUADRANT 1
+  computeAudio<<<gridSize, blockSize>>>(1,1, output_vec_d, output_dist_d, cam_d, p_d, s_d);  
+  cudaThreadSynchronize();
+  reduce<<<reductDim, 1024>>>(output_dist_d, output_vec_d,reduced_dist_d, reduced_vec_d, X_SIZE*Y_SIZE);
+  cudaThreadSynchronize();
+  reduce<<<1,reductDim>>>(reduced_dist_d, reduced_vec_d, final_dist_d, final_vec_d, reductDim);
+
+  HANDLE_ERROR( cudaMemcpy(&dist, final_dist_d, sizeof(float), cudaMemcpyDeviceToHost));
+  HANDLE_ERROR( cudaMemcpy(&vec, final_vec_d, sizeof(Point), cudaMemcpyDeviceToHost));
+  min_vec = vec * dist; 
+  temp = dist;
+
+  //QUADRANT 2
+  computeAudio<<<gridSize, blockSize>>>(1,-1, output_vec_d, output_dist_d, cam_d, p_d, s_d);  
+  cudaThreadSynchronize();
+  reduce<<<reductDim, 1024>>>(output_dist_d, output_vec_d,reduced_dist_d, reduced_vec_d, X_SIZE*Y_SIZE);
+  cudaThreadSynchronize();
+  reduce<<<1,reductDim>>>(reduced_dist_d, reduced_vec_d, final_dist_d, final_vec_d, reductDim);
+
+  HANDLE_ERROR( cudaMemcpy(&dist, final_dist_d, sizeof(float), cudaMemcpyDeviceToHost));
+  HANDLE_ERROR( cudaMemcpy(&vec, final_vec_d, sizeof(Point), cudaMemcpyDeviceToHost));
   
-  computeAudio<<<gridSize, blockSize>>>(1,1,rayDistance, output_vec_d, output_dist_d, cam_d, p_d, s_d);  
-  cudaThreadSynchronize();
-  reduce<<<reductDim, 1024>>>(output_dist_d, output_vec_d,reduced_dist_d, reduced_vec_d, X_SIZE*Y_SIZE);
-  cudaThreadSynchronize();
-  reduce<<<1,reductDim>>>(reduced_dist_d, reduced_vec_d, final_dist_d, final_vec_d, reductDim);
-
-  HANDLE_ERROR( cudaMemcpy(&distl, final_dist_d, sizeof(float), cudaMemcpyDeviceToHost));
-  HANDLE_ERROR( cudaMemcpy(&vec, final_vec_d, sizeof(Point), cudaMemcpyDeviceToHost));
-  *left = vec * distl; 
-  temp = distl;
-  //printf("I DID SOMETHING: (%f, %f, %f, %f)\n", left->x, left->y, left->z, distl);
-
-  computeAudio<<<gridSize, blockSize>>>(1,-1,rayDistance, output_vec_d, output_dist_d, cam_d, p_d, s_d);  
-  cudaThreadSynchronize();
-  reduce<<<reductDim, 1024>>>(output_dist_d, output_vec_d,reduced_dist_d, reduced_vec_d, X_SIZE*Y_SIZE);
-  cudaThreadSynchronize();
-  reduce<<<1,reductDim>>>(reduced_dist_d, reduced_vec_d, final_dist_d, final_vec_d, reductDim);
-  //cudaThreadSynchronize();
-
-  HANDLE_ERROR( cudaMemcpy(&distl, final_dist_d, sizeof(float), cudaMemcpyDeviceToHost));
-  HANDLE_ERROR( cudaMemcpy(&vec, final_vec_d, sizeof(Point), cudaMemcpyDeviceToHost));
-  if(distl < temp)
+  if(dist < temp)
   {
-  *left = vec * distl; 
-  temp = distl;
+    min_vec = vec * dist; 
+    temp = dist;
   }
 
-  //printf("I DID SOMETHING: (%f, %f, %f, %f)\n", left->x, left->y, left->z, distl);
-  
-  computeAudio<<<gridSize, blockSize>>>(-1,1, rayDistance, output_vec_d, output_dist_d, cam_d, p_d, s_d);  
+  //QUADRANT 3
+  computeAudio<<<gridSize, blockSize>>>(-1,1, output_vec_d, output_dist_d, cam_d, p_d, s_d);  
   cudaThreadSynchronize();
   reduce<<<reductDim, 1024>>>(output_dist_d, output_vec_d,reduced_dist_d, reduced_vec_d, X_SIZE*Y_SIZE);
   cudaThreadSynchronize();
   reduce<<<1,reductDim>>>(reduced_dist_d, reduced_vec_d, final_dist_d, final_vec_d, reductDim);
-  HANDLE_ERROR( cudaMemcpy(&distl, final_dist_d, sizeof(float), cudaMemcpyDeviceToHost));
+
+  HANDLE_ERROR( cudaMemcpy(&dist, final_dist_d, sizeof(float), cudaMemcpyDeviceToHost));
   HANDLE_ERROR( cudaMemcpy(&vec, final_vec_d, sizeof(Point), cudaMemcpyDeviceToHost));
-  if(distl < temp)
+  
+  if(dist < temp)
   {
-  *left = vec * distl; 
-  temp = distl;
+    min_vec = vec * dist; 
+    temp = dist;
   }
 
-//  printf("I DID SOMETHING: (%f, %f, %f, %f)\n", left->x, left->y, left->z, distl);
-  
-  computeAudio<<<gridSize, blockSize>>>(-1,-1, rayDistance, output_vec_d, output_dist_d, cam_d, p_d, s_d);  
+  //QUADRANT 4
+  computeAudio<<<gridSize, blockSize>>>(-1,-1, output_vec_d, output_dist_d, cam_d, p_d, s_d);  
   cudaThreadSynchronize();
   reduce<<<reductDim, 1024>>>(output_dist_d, output_vec_d,reduced_dist_d, reduced_vec_d, X_SIZE*Y_SIZE);
   cudaThreadSynchronize();
   reduce<<<1,reductDim>>>(reduced_dist_d, reduced_vec_d, final_dist_d, final_vec_d, reductDim);
-  HANDLE_ERROR( cudaMemcpy(&distl, final_dist_d, sizeof(float), cudaMemcpyDeviceToHost));
+  
+  HANDLE_ERROR( cudaMemcpy(&dist, final_dist_d, sizeof(float), cudaMemcpyDeviceToHost));
   HANDLE_ERROR( cudaMemcpy(&vec, final_vec_d, sizeof(Point), cudaMemcpyDeviceToHost));
-  if(distl < temp)
+  
+  if(dist < temp)
   {
-  *left = vec * distl; 
-  temp = distl;
+    min_vec = vec * dist; 
+    temp = dist;
   }
 
-  *left /= 750;
-  *right /= 1000;
-  *left *= -1; 
+  //Scale Down Distances and Account for coord differences between FMOD and Ray Tracer
+  min_vec /= 750;
+  min_vec *= -1; 
+
   if(temp < 1000000)
   {
 
-    FMOD_Channel_Set3DAttributes(channel2, (FMOD_VECTOR *) left, NULL);
+    FMOD_Channel_Set3DAttributes(channel2, (FMOD_VECTOR *) &min_vec, NULL);
     FMOD_Channel_SetMute(channel2, FALSE);
   }
   else
     FMOD_Channel_SetMute(channel2, TRUE);
 
 }
+/*
+ * Launches Both Video and Audio Ray Tracing from GLM overhead
+ */
 extern "C" void launch_kernel(uchar4* pos, unsigned int image_width, 
     unsigned int image_height, float time)
 {
-  Point move;
+  //Lighting Effect
   light->position.x -=  sin(theta += .01);
   if(theta == 360)
     theta = 0;
-
   spheres[NUM_SPHERES-1].center=light->position;
-
   HANDLE_ERROR( cudaMemcpy(l_d, light, sizeof(PointLight), cudaMemcpyHostToDevice) );
 
+  //Update Camera information for Cam and FMOD
   HANDLE_ERROR( cudaMemcpy(cam_d, camera,sizeof(Camera), cudaMemcpyHostToDevice) );
   FMOD_VECTOR vel = {0.0f, 0.0f, 0.0f};
   Point temp = camera->eye;
@@ -415,14 +419,14 @@ extern "C" void launch_kernel(uchar4* pos, unsigned int image_width,
 
 
 
-  // The Kernel Call
+  // The Video Kernel Call
   dim3 gridSize((WINDOW_WIDTH+15)/16, (WINDOW_HEIGHT+15)/16);
   dim3 blockSize(16,16);
   CUDARayTrace<<< gridSize, blockSize  >>>(cam_d, p_d, l_d, s_d, pos);
   cudaThreadSynchronize();
-
-  Point left, right;
-  launch_audio_kernel(&left, &right);
+ 
+  //Launch Audio Kernel
+  launch_audio_kernel();
 
 } 
 
@@ -498,7 +502,7 @@ Sphere* CreateSpheres() {
     spheres[num].radius = 50. - rand() % 30;
     spheres[num].center = CreatePoint(600 - rand() % 1200,
         100,
-    //    700 - rand() % 1100,
+        //    700 - rand() % 1100,
         500 - rand() %2500);
     spheres[num].ambient = CreateColor(randr, randg, randb);
     spheres[num].diffuse = CreateColor(randr, randg, randb);
@@ -553,7 +557,6 @@ Plane* CreatePlanes() {
    This version uses n/2 threads --
    it performs the first level of reduction when reading from global memory
  */
-#define BLOCK_SIZE 1024
 __global__ void reduce(float *g_idata,Point *g_ivec, float *g_odata, Point * g_ovec, unsigned int n)
 {
 
@@ -565,10 +568,12 @@ __global__ void reduce(float *g_idata,Point *g_ivec, float *g_odata, Point * g_o
   unsigned int i = blockIdx.x*(blockDim.x*2) + threadIdx.x;
 
   float temp;
+
+  //Perform first reduction moving to shared memory
   sdata[tid] = (i < n) ? g_idata[i] : FLT_MAX;
   if(i < n)
     svec[tid] = g_ivec[i];
-
+ 
   if (i + blockDim.x < n && (temp = g_idata[i+blockDim.x]) < sdata[tid])
   {
     sdata[tid] = temp;
@@ -595,10 +600,10 @@ __global__ void reduce(float *g_idata,Point *g_ivec, float *g_odata, Point * g_o
   }
 }
 
-
-
-// -1 for LEFTEAR, 1 for RIGHTEAR
-__global__ void computeAudio(int ear_dir, int forward, int rayDistance, Point * o_vec3, float * o_distance,  Camera * cam,Plane * planes, Sphere * spheres)
+/*
+ * Computes Audio on Per-Quadrant basis. Values written to output vectors to be reduced later
+ */
+__global__ void computeAudio(int ear_dir, int forward, Point * o_vec3, float * o_distance,  Camera * cam,Plane * planes, Sphere * spheres)
 {
   Ray myRay;
 
@@ -608,13 +613,13 @@ __global__ void computeAudio(int ear_dir, int forward, int rayDistance, Point * 
 
   float tanVal = tan(FOV/2);
   float rvaly = tanVal - (2 * tanVal / Y_SIZE) * row;
-  
+
   float rad = (float) col / X_SIZE * 3.141592 / 2.f;
   float rvalz = glm::sin(rad);
   float rvalx = glm::cos(rad);
 
+  /*Ray direction info*/
   myRay.origin = cam->eye;
-
   myRay.direction = cam->lookRight * rvalx;
   myRay.direction += (rvaly * cam->lookUp);
   myRay.direction += rvalz * cam->lookAt;
@@ -625,6 +630,9 @@ __global__ void computeAudio(int ear_dir, int forward, int rayDistance, Point * 
   o_distance[index] = findDistance(myRay, cam, planes, spheres);
   o_vec3[index] = myRay.direction;
 }
+/*
+ * Calculates the distance to speaker from Ray origin. FLT_MAX returned on no intersection.
+ */
 __device__ float findDistance(Ray myRay, Camera * cam, Plane * planes, Sphere * spheres)
 {
   float total_distance = 0;
@@ -632,7 +640,7 @@ __device__ float findDistance(Ray myRay, Camera * cam, Plane * planes, Sphere * 
   int i, closestSphere, closestPlane;
   float smallest, t;
 
-  for(int j = 0; j < 3; j++)//Loop for 5 reflections
+  for(int j = 0; j < 3; j++)//Loop for 2 reflections
   {
     i = 0;
     closestSphere = -1; 
@@ -663,22 +671,27 @@ __device__ float findDistance(Ray myRay, Camera * cam, Plane * planes, Sphere * 
     total_distance += smallest;
 
     if(closestSphere == NUM_SPHERES-2)//The Speaker(Hit)
-      return total_distance; //* glm::pow(5, reflections);
-    total_distance+= 500; 
-    currentRay.origin = currentRay.direction * smallest + currentRay.origin;
+      return total_distance;
 
-    if(closestPlane != -1)//Could be NEGATIVE currentRay Assume reflect is normalized
+    //Energy lost from wall
+    total_distance+= 500; 
+    
+    //Calculate New Ray
+    currentRay.origin = currentRay.direction * smallest + currentRay.origin;
+    if(closestPlane != -1)
     {
       currentRay.direction = -glm::reflect(-glm::normalize(currentRay.direction), glm::normalize(planes[closestPlane].normal));
-    
+
     }
     else if(closestSphere < NUM_SPHERES-2)
     {
       currentRay.direction = -glm::reflect(-glm::normalize(currentRay.direction), glm::normalize(currentRay.origin - spheres[closestSphere].center));
-    
+
     }
     currentRay.direction = glm::normalize(currentRay.direction);
   }
+
+  //No intersection with speaker
   return FLT_MAX;
 }
 
