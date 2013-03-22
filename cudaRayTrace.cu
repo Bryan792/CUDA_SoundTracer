@@ -674,7 +674,7 @@ __device__ float findDistance(Ray myRay, Camera * cam, Plane * planes, Sphere * 
       return total_distance;
 
     //Energy lost from wall
-    total_distance+= 500; 
+    total_distance+= 1000; 
     
     //Calculate New Ray
     currentRay.origin = currentRay.direction * smallest + currentRay.origin;
