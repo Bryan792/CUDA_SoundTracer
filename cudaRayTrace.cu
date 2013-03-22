@@ -24,6 +24,7 @@
 #define Y_SIZE 128
 #define BLOCK_SIZE 1024
 
+const int INTERFACE_UPDATETIME = 50;        // 50ms update for interface
 Camera * camera, *cam_d;
 PointLight *light, *l_d;
 Plane * planes, *p_d;
@@ -84,17 +85,18 @@ static void HandleError( cudaError_t err, const char * file, int line)
 extern "C" void setup_scene()
 {
   HANDLE_ERROR(cudaDeviceSetCacheConfig(cudaFuncCachePreferL1));
-  
-  //SCENE SETUP
   camera = CameraInit();
   light = LightInit();
   spheres = CreateSpheres();
   planes = CreatePlanes(); 
 
-  //FMOD SOUND SETUP
   FMOD_System_Create(&asystem);
+  //  FMOD_System_GetVersion(system, &version);
   FMOD_System_Init(asystem, 10, FMOD_INIT_NORMAL, NULL);
+  //FMOD_System_CreateSound(asystem, "fmod/media/swish.wav", FMOD_SOFTWARE | FMOD_3D, 0, &sound1);
   FMOD_System_CreateSound(asystem, "808-clap.wav", FMOD_SOFTWARE | FMOD_3D, 0, &sound1);
+  
+  //FMOD_Sound_Set3DMinMaxDistance(sound1, 4.0f, 10000000.0f);
   FMOD_Sound_SetMode(sound1, FMOD_LOOP_NORMAL);
   
   FMOD_System_PlaySound(asystem, FMOD_CHANNEL_FREE, sound1, TRUE, &channel1);
@@ -114,8 +116,10 @@ extern "C" void setup_scene()
 
   //CUDA MEMCPYS
   HANDLE_ERROR( cudaMemcpy(l_d, light, sizeof(PointLight), cudaMemcpyHostToDevice) );
+
   HANDLE_ERROR( cudaMemcpy(cam_d, camera,sizeof(Camera), cudaMemcpyHostToDevice) );
   HANDLE_ERROR( cudaMemcpy(p_d, planes,sizeof(Plane)*NUM_PLANES, cudaMemcpyHostToDevice) );
+
   HANDLE_ERROR( cudaMemcpy(s_d, spheres,sizeof(Sphere)*NUM_SPHERES, cudaMemcpyHostToDevice) );
 
 
@@ -326,6 +330,7 @@ extern "C" void launch_audio_kernel()
   reduce<<<reductDim, 1024>>>(output_dist_d, output_vec_d,reduced_dist_d, reduced_vec_d, X_SIZE*Y_SIZE);
   cudaThreadSynchronize();
   reduce<<<1,reductDim>>>(reduced_dist_d, reduced_vec_d, final_dist_d, final_vec_d, reductDim);
+  //cudaThreadSynchronize();
 
   HANDLE_ERROR( cudaMemcpy(&dist, final_dist_d, sizeof(float), cudaMemcpyDeviceToHost));
   HANDLE_ERROR( cudaMemcpy(&vec, final_vec_d, sizeof(Point), cudaMemcpyDeviceToHost));
@@ -338,6 +343,7 @@ extern "C" void launch_audio_kernel()
   reduce<<<reductDim, 1024>>>(output_dist_d, output_vec_d,reduced_dist_d, reduced_vec_d, X_SIZE*Y_SIZE);
   cudaThreadSynchronize();
   reduce<<<1,reductDim>>>(reduced_dist_d, reduced_vec_d, final_dist_d, final_vec_d, reductDim);
+  //cudaThreadSynchronize();
 
   HANDLE_ERROR( cudaMemcpy(&dist, final_dist_d, sizeof(float), cudaMemcpyDeviceToHost));
   HANDLE_ERROR( cudaMemcpy(&vec, final_vec_d, sizeof(Point), cudaMemcpyDeviceToHost));
@@ -384,14 +390,16 @@ extern "C" void launch_audio_kernel()
   min_vec /= 750;
   min_vec *= -1; 
 
+  //printf("I DID SOMETHING: (%f, %f, %f, %f)\n", left->x, left->y, left->z, temp);
+  //printf("I DID SOMETHING: (%f, %f, %f, %f)\n", left->x, left->y, left->z, temp);
   if(temp < 1000000)
   {
 
-    FMOD_Channel_Set3DAttributes(channel2, (FMOD_VECTOR *) &min_vec, NULL);
-    FMOD_Channel_SetMute(channel2, FALSE);
+    FMOD_Channel_Set3DAttributes(channel1, (FMOD_VECTOR *) &min_vec, NULL);
+    FMOD_Channel_SetMute(channel1, FALSE);
   }
   else
-    FMOD_Channel_SetMute(channel2, TRUE);
+    FMOD_Channel_SetMute(channel1, TRUE);
 
 }
 /*
@@ -573,7 +581,7 @@ __global__ void reduce(float *g_idata,Point *g_ivec, float *g_odata, Point * g_o
   sdata[tid] = (i < n) ? g_idata[i] : FLT_MAX;
   if(i < n)
     svec[tid] = g_ivec[i];
- 
+
   if (i + blockDim.x < n && (temp = g_idata[i+blockDim.x]) < sdata[tid])
   {
     sdata[tid] = temp;
@@ -620,9 +628,11 @@ __global__ void computeAudio(int ear_dir, int forward, Point * o_vec3, float * o
 
   /*Ray direction info*/
   myRay.origin = cam->eye;
-  myRay.direction = cam->lookRight * rvalx;
+  myRay.direction.x = rvalx;
+  myRay.direction.z = rvalz;
+  //myRay.direction = cam->lookRight * rvalx;
   myRay.direction += (rvaly * cam->lookUp);
-  myRay.direction += rvalz * cam->lookAt;
+  //myRay.direction += rvalz * cam->lookAt;
   myRay.direction.x *= ear_dir;
   myRay.direction.z *= forward;
   myRay.direction = glm::normalize(myRay.direction);
@@ -667,7 +677,10 @@ __device__ float findDistance(Ray myRay, Camera * cam, Plane * planes, Sphere * 
       i++;
     } 
     if(smallest == 0)//N0 INTERSECTIONS
+    {
+      //  printf("%i\n", i);
       return FLT_MAX;
+    }
     total_distance += smallest;
 
     if(closestSphere == NUM_SPHERES-2)//The Speaker(Hit)
@@ -681,12 +694,12 @@ __device__ float findDistance(Ray myRay, Camera * cam, Plane * planes, Sphere * 
     if(closestPlane != -1)
     {
       currentRay.direction = -glm::reflect(-glm::normalize(currentRay.direction), glm::normalize(planes[closestPlane].normal));
-
+    
     }
     else if(closestSphere < NUM_SPHERES-2)
     {
       currentRay.direction = -glm::reflect(-glm::normalize(currentRay.direction), glm::normalize(currentRay.origin - spheres[closestSphere].center));
-
+    
     }
     currentRay.direction = glm::normalize(currentRay.direction);
   }
@@ -694,6 +707,7 @@ __device__ float findDistance(Ray myRay, Camera * cam, Plane * planes, Sphere * 
   //No intersection with speaker
   return FLT_MAX;
 }
+
 
 /*
  * CUDA global function which performs ray tracing. Responsible for initializing and writing to output vector

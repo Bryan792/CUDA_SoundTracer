@@ -1,32 +1,24 @@
 ======================================
 
-458 & 570 Combo Lab
-CUDA Ray Tracer
-Prof. Christopher Lupo & Prof. Zoë Wood
+458 Final Project
+CUDA Audio Tracer
+Prof. Christopher Lupo
 
-Paul Armer (parmer)
 Bryan Ching (bcching)
 Matthew Crussell (macrusse)
 
 ======================================
 
-Implementation
--------------------------------------
-Our CUDA Ray Tracer builds off our previous parallelized ray tracer and makes it
-real time. To do this only a little of optimization needed to be done to prevent
-divergence. Otherwise, we used glut to run our cuda kernel, generate the
-image, and display it on the screen. 
+Instructions for Compiling and Running
+--------------------------------------
+untar code and libraries
+make to compile code 
+./RTRT to run
 
-
-FPS 100 spheres 6 planes + shadows + lighting
----------
-65 fps
-
-
-Options for coolness
+Keyboard Controls
 --------------------------------------
 wasd  - movement
-ijkl  - turning (jl working ik broken)
+
 q     - reset camera
 r     - redraw spheres
 o     - spiral inwards
@@ -38,11 +30,9 @@ p     - spiral outwards
 9     - darkens planes
 0     - brightens planes
 
-
-Instructions for Compiling and Running
+Mouse Controls
 --------------------------------------
-unzip glm
-make to compile code 
-./RTRT to run
+Click mouse and drag   - turning
+
 
 To make changes in sphere numbers, edit cudaRayTrace.h
